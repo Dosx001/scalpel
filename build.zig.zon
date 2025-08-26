@@ -1,0 +1,13 @@
+.{
+    .name = .scalpel,
+    .version = "0.0.0",
+    .fingerprint = 0x1351a4bbc0c25a41, 
+    .minimum_zig_version = "0.14.1",
+    .dependencies = .{
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
