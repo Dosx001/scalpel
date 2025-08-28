@@ -2,6 +2,11 @@ const std = @import("std");
 
 const posix = std.posix;
 
+const Msg = struct {
+    status: bool,
+    data: []const u8,
+};
+
 pub fn init() !void {
     const fd = posix.socket(posix.AF.INET, posix.SOCK.STREAM, 0) catch |e| {
         std.log.err("Server socket failed: {}", .{e});
@@ -35,30 +40,34 @@ pub fn init() !void {
         std.log.err("Server listen failed: {}", .{e});
         return;
     };
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
     var buf: [1024]u8 = undefined;
     while (true) {
         const client_fd = posix.accept(fd, null, null, 0) catch |e| {
             std.log.err("Server accept failed: {}", .{e});
-            return;
+            continue;
         };
         defer posix.close(client_fd);
         var len = posix.read(client_fd, &buf) catch |e| {
             std.log.err("Client read failed: {}", .{e});
-            return e;
+            continue;
         };
         _ = posix.write(
             client_fd,
             try handshake(&buf),
         ) catch |e| {
             std.log.err("Client write failed: {}", .{e});
-            return;
+            continue;
         };
         while (true) {
             len = posix.read(client_fd, &buf) catch |e| {
                 std.log.err("Client read failed: {}", .{e});
-                return;
+                break;
             };
-            std.debug.print("client: {s}\n", .{buf[0..len]});
+            const json = decode(&buf, allocator) catch break;
+            defer json.deinit();
+            std.debug.print("data: {s}", .{json.value.data});
             // _ = posix.write(client_fd, &buf) catch |e| {
             //     std.log.err("Client write failed: {}", .{e});
             //     return;
@@ -95,6 +104,40 @@ fn handshake(buf: []u8) ![]const u8 {
         .{encoder.encode(&b64, &sha)},
     ) catch |e| {
         std.log.err("Client write failed: {}", .{e});
+        return e;
+    };
+}
+
+fn decode(buf: []u8, allocator: std.mem.Allocator) !std.json.Parsed(Msg) {
+    var len: usize = (buf[1] & 0x7F);
+    var index: usize =
+        switch (len) {
+            126 => blk: {
+                len = (@as(u16, buf[2]) << 8) | buf[3];
+                break :blk 4;
+            },
+            127 => blk: {
+                len = 0;
+                for (2..10) |i| {
+                    len = (len << 8) | buf[i];
+                }
+                break :blk 10;
+            },
+            else => 2,
+        };
+    const key = buf[index .. index + 4];
+    index += 4;
+    const payload = buf[index .. index + len];
+    for (payload, 0..) |*b, i| {
+        b.* = b.* ^ key[i % 4];
+    }
+    return std.json.parseFromSlice(
+        Msg,
+        allocator,
+        payload,
+        .{},
+    ) catch |e| {
+        std.log.err("JSON parse failed: {}", .{e});
         return e;
     };
 }
