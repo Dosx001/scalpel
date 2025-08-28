@@ -67,12 +67,9 @@ pub fn init() !void {
             };
             const json = decode(&buf, allocator) catch break;
             defer json.deinit();
-            std.debug.print("data: {s}", .{json.value.data});
-            // _ = posix.write(client_fd, &buf) catch |e| {
-            //     std.log.err("Client write failed: {}", .{e});
-            //     return;
-            // };
-            std.time.sleep(std.time.ns_per_ms * 100);
+            std.debug.print("data: {s}\n", .{json.value.data});
+            try message(&buf, client_fd, "pong");
+            std.time.sleep(std.time.ns_per_ms * 500);
         }
     }
 }
@@ -138,6 +135,42 @@ fn decode(buf: []u8, allocator: std.mem.Allocator) !std.json.Parsed(Msg) {
         .{},
     ) catch |e| {
         std.log.err("JSON parse failed: {}", .{e});
+        return e;
+    };
+}
+
+fn message(buf: []u8, fd: c_int, msg: []const u8) !void {
+    if (msg.len < 126) {
+        const slice = std.fmt.bufPrint(
+            buf,
+            "00{s}",
+            .{msg},
+        ) catch |e| {
+            std.log.err("Message format failed: {}", .{e});
+            return e;
+        };
+        buf[0] = 0x81;
+        buf[1] = @intCast(msg.len);
+        _ = posix.write(fd, slice) catch |e| {
+            std.log.err("Server write failed: {}", .{e});
+            return e;
+        };
+        return;
+    }
+    const slice = std.fmt.bufPrint(
+        buf,
+        "0000{s}",
+        .{msg},
+    ) catch |e| {
+        std.log.err("Message format failed: {}", .{e});
+        return e;
+    };
+    buf[0] = 0x81;
+    buf[1] = 0x7E;
+    buf[2] = @intCast((msg.len >> 8) & 0xFF);
+    buf[3] = @intCast(msg.len & 0xFF);
+    _ = posix.write(fd, slice) catch |e| {
+        std.log.err("Server write failed: {}", .{e});
         return e;
     };
 }
