@@ -1,0 +1,17 @@
+{
+  "manifest_version": 2,
+  "permissions": ["<all_urls>", "activeTab", "tabs"],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "@scalpel"
+    }
+  },
+  "browser_action": {
+    "browser_style": true,
+    "default_popup": "src/popup.html",
+    "default_title": "Scalpel"
+  },
+  "background": {
+    "scripts": ["src/background.ts"]
+  }
+}
