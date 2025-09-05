@@ -1,5 +1,4 @@
 const sig = @import("signal.zig");
-const srv = @import("server.zig");
 const std = @import("std");
 
 const posix = std.posix;
@@ -9,12 +8,14 @@ const Msg = struct {
     data: []const u8,
 };
 
-var fd: posix.socket_t = undefined;
-var client: posix.socket_t = undefined;
+var b_mtx = std.Thread.Mutex{};
+var c_mtx = std.Thread.Mutex{};
+var browser: posix.socket_t = 0;
+var client: posix.socket_t = 0;
 
 pub fn init() !void {
     sig.init(quit, exit);
-    fd = posix.socket(posix.AF.INET, posix.SOCK.STREAM, 0) catch |e| {
+    const fd = posix.socket(posix.AF.INET, posix.SOCK.STREAM, 0) catch |e| {
         std.log.err("Websocket socket failed: {}", .{e});
         return;
     };
@@ -46,59 +47,91 @@ pub fn init() !void {
         std.log.err("Websocket listen failed: {}", .{e});
         return;
     };
-    srv.init() catch return;
-    var buf: [1024]u8 = undefined;
-    var msg: [1024]u8 = undefined;
-    var len: usize = undefined;
+    std.log.info("Websocket listening: {any}", .{addr});
     while (true) {
-        std.log.info("Websocket listening", .{});
-        client = posix.accept(fd, null, null, 0) catch |e| {
+        const conn = posix.accept(fd, null, null, 0) catch |e| {
             std.log.err("Websocket accept failed: {}", .{e});
             continue;
         };
-        defer posix.close(client);
-        _ = posix.read(client, &buf) catch |e| {
-            std.log.err("Websocket client read failed: {}", .{e});
-            continue;
-        };
-        _ = posix.write(
-            client,
-            try handshake(&buf),
-        ) catch |e| {
-            std.log.err("Websocket client write failed: {}", .{e});
-            continue;
-        };
-        while (true) {
-            message(&buf,
-                \\{"type":"ping"}
-            ) catch break;
-            if (posix.read(client, &buf) catch |e| {
-                std.log.err("Websocket ping failed: {}", .{e});
-                break;
-            } < 9) break;
-            srv.accept() catch continue;
-            while (true) {
-                len = srv.read(&msg) catch {
-                    srv.close();
-                    break;
-                };
-                if (len == 0) break;
-                message(&buf, msg[0..len]) catch break;
-                len = posix.read(client, &buf) catch |e| {
-                    std.log.err("Server read failed: {}", .{e});
-                    break;
-                };
-                if (len == 0) break;
-                decode(&buf) catch break;
-            }
-        }
+        _ = std.Thread.spawn(.{}, event_loop, .{conn}) catch continue;
     }
 }
 
-fn handshake(buf: []u8) ![]const u8 {
+fn event_loop(fd: posix.socket_t) void {
+    defer posix.close(fd);
+    var buf: [1024]u8 = undefined;
+    if (handshake(fd, &buf) catch return) {
+        el_browser(&buf) catch return;
+    } else el_client(&buf) catch return;
+}
+
+fn el_browser(buf: []u8) !void {
+    defer {
+        b_mtx.lock();
+        browser = 0;
+        b_mtx.unlock();
+    }
+    var len: usize = 0;
+    while (true) {
+        len = posix.read(browser, buf) catch |e| {
+            std.log.err("Browser message read failed: {}", .{e});
+            break;
+        };
+        if (len == 0) break;
+        decode(buf[0..len]) catch break;
+    }
+}
+
+fn el_client(buf: []u8) !void {
+    defer {
+        c_mtx.lock();
+        client = 0;
+        c_mtx.unlock();
+    }
+    var len: usize = 0;
+    var msg: [1024]u8 = undefined;
+    while (true) {
+        len = posix.read(client, &msg) catch |e| {
+            std.log.err("Client message read failed: {}", .{e});
+            break;
+        };
+        if (len == 0) break;
+        message(buf, msg[0..len]) catch break;
+    }
+}
+
+fn handshake(fd: posix.socket_t, buf: []u8) !bool {
+    _ = posix.read(fd, buf) catch |e| {
+        std.log.err("Websocket header read failed: {}", .{e});
+        return e;
+    };
+    if (std.mem.startsWith(u8, buf, "client")) {
+        if (client == 0) {
+            _ = posix.write(fd, &[1]u8{0x1}) catch |e| {
+                std.log.err("Client handshake failed: {}", .{e});
+                return e;
+            };
+            c_mtx.lock();
+            client = fd;
+            c_mtx.unlock();
+        } else {
+            _ = posix.write(fd, &[1]u8{0x0}) catch |e| {
+                std.log.err("Client rejection failed: {}", .{e});
+                return e;
+            };
+        }
+        return false;
+    }
+    if (browser != 0) {
+        _ = posix.write(fd, &[1]u8{0x0}) catch |e| {
+            std.log.err("Client rejection failed: {}", .{e});
+            return e;
+        };
+        return error.AlreadyInUse;
+    }
     const header = "Sec-WebSocket-Key: ";
-    var it = std.mem.splitScalar(u8, buf, '\n');
     var key: []const u8 = undefined;
+    var it = std.mem.splitScalar(u8, buf, '\n');
     while (it.next()) |line| {
         if (std.mem.startsWith(u8, line, header)) {
             key = std.mem.trim(u8, line[header.len..], "\r");
@@ -108,7 +141,7 @@ fn handshake(buf: []u8) ![]const u8 {
     var sha: [std.crypto.hash.Sha1.digest_length]u8 = undefined;
     std.crypto.hash.Sha1.hash(
         std.fmt.bufPrint(buf, "{s}258EAFA5-E914-47DA-95CA-C5AB0DC85B11", .{key}) catch |e| {
-            std.log.err("Client write failed: {}", .{e});
+            std.log.err("Magic string failed: {}", .{e});
             return e;
         },
         &sha,
@@ -116,14 +149,22 @@ fn handshake(buf: []u8) ![]const u8 {
     );
     const encoder = std.base64.Base64Encoder.init(std.base64.standard_alphabet_chars, '=');
     var b64: [32]u8 = undefined;
-    return std.fmt.bufPrint(
+    const slice = std.fmt.bufPrint(
         buf,
         "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {s}\r\n\r\n",
         .{encoder.encode(&b64, &sha)},
     ) catch |e| {
-        std.log.err("Client write failed: {}", .{e});
+        std.log.err("Handshake format failed: {}", .{e});
         return e;
     };
+    _ = posix.write(fd, slice) catch |e| {
+        std.log.err("Handshake write failed: {}", .{e});
+        return e;
+    };
+    b_mtx.lock();
+    browser = fd;
+    b_mtx.unlock();
+    return true;
 }
 
 fn decode(buf: []u8) !void {
@@ -149,7 +190,11 @@ fn decode(buf: []u8) !void {
     for (payload, 0..) |*b, i| {
         b.* = b.* ^ key[i % 4];
     }
-    try srv.write(payload);
+    if (payload.len == 2) return error.Closed;
+    _ = posix.write(client, payload) catch |e| {
+        std.log.err("Server write failed: {}", .{e});
+        return e;
+    };
 }
 
 fn message(buf: []u8, msg: []const u8) !void {
@@ -164,7 +209,7 @@ fn message(buf: []u8, msg: []const u8) !void {
         };
         buf[0] = 0x81;
         buf[1] = @intCast(msg.len);
-        _ = posix.write(client, slice) catch |e| {
+        _ = posix.write(browser, slice) catch |e| {
             std.log.err("Server write failed: {}", .{e});
             return e;
         };
@@ -182,18 +227,17 @@ fn message(buf: []u8, msg: []const u8) !void {
     buf[1] = 0x7E;
     buf[2] = @intCast((msg.len >> 8) & 0xFF);
     buf[3] = @intCast(msg.len & 0xFF);
-    _ = posix.write(client, slice) catch |e| {
+    _ = posix.write(browser, slice) catch |e| {
         std.log.err("Server write failed: {}", .{e});
         return e;
     };
 }
 
 fn quit(_: c_int) callconv(.C) void {
-    if (0 < client) {
-        _ = posix.write(client, &[2]u8{ 0x88, 0x00 }) catch |e|
+    if (0 < browser) {
+        _ = posix.write(browser, &[2]u8{ 0x88, 0x00 }) catch |e|
             std.log.err("CLeanup failed: {}", .{e});
     }
-    srv.unlink();
     std.posix.exit(0);
 }
 
@@ -204,11 +248,10 @@ fn exit(signal: c_int) callconv(.C) void {
         posix.SIG.SEGV => std.log.err("Segmentation fault", .{}),
         else => {},
     }
-    if (0 < client) {
-        _ = posix.write(client, &[2]u8{ 0x88, 0x00 }) catch |e| {
+    if (0 < browser) {
+        _ = posix.write(browser, &[2]u8{ 0x88, 0x00 }) catch |e| {
             std.log.err("CLeanup failed: {}", .{e});
         };
     }
-    srv.unlink();
     std.posix.exit(1);
 }

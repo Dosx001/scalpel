@@ -1,6 +1,11 @@
 {
   "manifest_version": 2,
-  "permissions": ["<all_urls>", "activeTab", "tabs"],
+  "permissions": [
+    "<all_urls>",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
   "browser_specific_settings": {
     "gecko": {
       "id": "@scalpel"
@@ -12,6 +17,8 @@
     "default_title": "Scalpel"
   },
   "background": {
-    "scripts": ["src/background.ts"]
+    "scripts": [
+      "src/background.ts"
+    ]
   }
 }
