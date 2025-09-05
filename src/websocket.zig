@@ -47,10 +47,9 @@ pub fn init() !void {
         return;
     };
     srv.init() catch return;
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // const allocator = gpa.allocator();
     var buf: [1024]u8 = undefined;
     var msg: [1024]u8 = undefined;
+    var len: usize = undefined;
     while (true) {
         std.log.info("Websocket listening", .{});
         client = posix.accept(fd, null, null, 0) catch |e| {
@@ -79,23 +78,19 @@ pub fn init() !void {
             } < 9) break;
             srv.accept() catch continue;
             while (true) {
-                const len = srv.read(&msg) catch {
+                len = srv.read(&msg) catch {
                     srv.close();
                     break;
                 };
                 if (len == 0) break;
                 message(&buf, msg[0..len]) catch break;
+                len = posix.read(client, &buf) catch |e| {
+                    std.log.err("Server read failed: {}", .{e});
+                    break;
+                };
+                if (len == 0) break;
+                decode(&buf) catch break;
             }
-            // try message(&buf, client_fd, "http://www.google.com");
-            // len = posix.read(client_fd, &buf) catch |e| {
-            //     std.log.err("Client read failed: {}", .{e});
-            //     break;
-            // };
-            // const json = decode(&buf, allocator) catch break;
-            // defer json.deinit();
-            // std.debug.print("data: {s}\n", .{json.value.data.?});
-            // try message(&buf, client_fd, "pong");
-            // std.time.sleep(std.time.ns_per_ms * 500);
         }
     }
 }
@@ -131,7 +126,7 @@ fn handshake(buf: []u8) ![]const u8 {
     };
 }
 
-fn decode(buf: []u8, allocator: std.mem.Allocator) !std.json.Parsed(Msg) {
+fn decode(buf: []u8) !void {
     var len: usize = (buf[1] & 0x7F);
     var index: usize =
         switch (len) {
@@ -154,15 +149,7 @@ fn decode(buf: []u8, allocator: std.mem.Allocator) !std.json.Parsed(Msg) {
     for (payload, 0..) |*b, i| {
         b.* = b.* ^ key[i % 4];
     }
-    return std.json.parseFromSlice(
-        Msg,
-        allocator,
-        payload,
-        .{},
-    ) catch |e| {
-        std.log.err("JSON parse failed: {}", .{e});
-        return e;
-    };
+    try srv.write(payload);
 }
 
 fn message(buf: []u8, msg: []const u8) !void {

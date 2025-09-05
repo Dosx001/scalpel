@@ -60,7 +60,7 @@ pub fn read(buf: []u8) !usize {
 }
 
 pub fn write(msg: []const u8) !void {
-    posix.write(
+    _ = posix.write(
         client,
         msg,
     ) catch |e| {

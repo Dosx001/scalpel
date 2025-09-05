@@ -21,9 +21,15 @@ pub fn main() void {
     };
     defer posix.close(fd);
     _ = posix.send(fd,
-        \\{"type":"window","payload":"http://www.google.com"}
+        \\{"type":"window","payload":{"url":"http://www.google.com","private":true}}
     , 0) catch |e| {
         std.log.err("send failed: {}", .{e});
         return;
     };
+    var buf: [1024]u8 = undefined;
+    const len = posix.read(fd, &buf) catch |e| {
+        std.log.err("read failed: {}", .{e});
+        return;
+    };
+    std.log.info("recv: {s}", .{buf[0..len]});
 }

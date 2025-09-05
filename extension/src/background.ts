@@ -1,8 +1,3 @@
-interface Message {
-  type: string;
-  payload: any;
-}
-
 let ws: WebSocket;
 
 function init() {
@@ -20,10 +15,20 @@ function init() {
         ws.send("pong");
         break;
       case "window":
-        browser.windows.create({
-          url: data.payload,
-          focused: true,
-        });
+        browser.windows
+          .create({
+            url: data.payload.url,
+            focused: true,
+            incognito: data.payload.private ?? false,
+          })
+          .then((window) => {
+            ws.send(
+              JSON.stringify({
+                id: window.id,
+                tabId: (window.tabs ?? [])[0].id,
+              }),
+            );
+          });
         break;
     }
   };
