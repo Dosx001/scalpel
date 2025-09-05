@@ -29,12 +29,14 @@ function init() {
             incognito: data.payload.private ?? false,
           })
           .then((window) => {
-            ws.send(
-              JSON.stringify({
-                id: window.id,
-                tabId: (window.tabs ?? [])[0].id,
-              }),
-            );
+            setTimeout(() => {
+              ws.send(
+                JSON.stringify({
+                  id: window.id,
+                  tabId: (window.tabs ?? [])[0].id,
+                }),
+              );
+            }, 200);
           });
         break;
     }

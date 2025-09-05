@@ -45,16 +45,39 @@ pub fn main() void {
     }
     _ = posix.send(fd, std.fmt.bufPrint(
         &buf,
-        \\{{"type":"text","payload":{{"id":{d},"query":"h1"}}}}
+        \\{{"type":"window","payload":{{"url":"https://www.google.com/search?q=websocket","private":true}}}}
     ,
-        .{284},
+        .{},
     ) catch unreachable, 0) catch |e| {
-        std.log.err("send failed: {}", .{e});
+        std.log.err("send window failed: {}", .{e});
         return;
     };
     len = posix.read(fd, &buf) catch |e| {
-        std.log.err("read failed: {}", .{e});
+        std.log.err("read window failed: {}", .{e});
         return;
     };
-    std.log.info("read: {s}", .{buf[0..len]});
+    std.debug.print("{s}\n", .{buf[0..len]});
+    const json = std.json.parseFromSlice(
+        Msg,
+        std.heap.page_allocator,
+        buf[0..len],
+        .{},
+    ) catch |e| {
+        std.log.err("parse window failed: {}", .{e});
+        return;
+    };
+    _ = posix.send(fd, std.fmt.bufPrint(
+        &buf,
+        \\{{"type":"text","payload":{{"id":{d},"query":"h3"}}}}
+    ,
+        .{json.value.tabId},
+    ) catch unreachable, 0) catch |e| {
+        std.log.err("send text failed: {}", .{e});
+        return;
+    };
+    len = posix.read(fd, &buf) catch |e| {
+        std.log.err("read text failed: {}", .{e});
+        return;
+    };
+    std.debug.print("{s}\n", .{buf[0..len]});
 }
