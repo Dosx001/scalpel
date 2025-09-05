@@ -15,15 +15,31 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(exe);
 
+    const client_mod = b.createModule(.{
+        .root_source_file = b.path("src/client.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const client = b.addExecutable(.{
+        .name = "scalpel-client",
+        .root_module = client_mod,
+    });
+    b.installArtifact(client);
+
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
+    const run_client = b.addRunArtifact(client);
+    run_client.step.dependOn(b.getInstallStep());
 
     if (b.args) |args| {
         run_cmd.addArgs(args);
+        run_client.addArgs(args);
     }
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+    const run_client_step = b.step("client", "Run the client");
+    run_client_step.dependOn(&run_client.step);
 
     const exe_unit_tests = b.addTest(.{
         .root_module = exe_mod,

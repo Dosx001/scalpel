@@ -1,3 +1,5 @@
+const sig = @import("signal.zig");
+const srv = @import("server.zig");
 const std = @import("std");
 
 const posix = std.posix;
@@ -7,9 +9,13 @@ const Msg = struct {
     data: []const u8,
 };
 
+var fd: posix.socket_t = undefined;
+var client: posix.socket_t = undefined;
+
 pub fn init() !void {
-    const fd = posix.socket(posix.AF.INET, posix.SOCK.STREAM, 0) catch |e| {
-        std.log.err("Server socket failed: {}", .{e});
+    sig.init(quit, exit);
+    fd = posix.socket(posix.AF.INET, posix.SOCK.STREAM, 0) catch |e| {
+        std.log.err("Websocket socket failed: {}", .{e});
         return;
     };
     defer posix.close(fd);
@@ -33,43 +39,63 @@ pub fn init() !void {
     };
     const addr = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 8080);
     posix.bind(fd, &addr.any, addr.getOsSockLen()) catch |e| {
-        std.log.err("Server bind failed: {}", .{e});
+        std.log.err("Websocket bind failed: {}", .{e});
         return;
     };
     posix.listen(fd, 10) catch |e| {
-        std.log.err("Server listen failed: {}", .{e});
+        std.log.err("Websocket listen failed: {}", .{e});
         return;
     };
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+    srv.init() catch return;
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // const allocator = gpa.allocator();
     var buf: [1024]u8 = undefined;
+    var msg: [1024]u8 = undefined;
     while (true) {
-        const client_fd = posix.accept(fd, null, null, 0) catch |e| {
-            std.log.err("Server accept failed: {}", .{e});
+        std.log.info("Websocket listening", .{});
+        client = posix.accept(fd, null, null, 0) catch |e| {
+            std.log.err("Websocket accept failed: {}", .{e});
             continue;
         };
-        defer posix.close(client_fd);
-        var len = posix.read(client_fd, &buf) catch |e| {
-            std.log.err("Client read failed: {}", .{e});
+        defer posix.close(client);
+        _ = posix.read(client, &buf) catch |e| {
+            std.log.err("Websocket client read failed: {}", .{e});
             continue;
         };
         _ = posix.write(
-            client_fd,
+            client,
             try handshake(&buf),
         ) catch |e| {
-            std.log.err("Client write failed: {}", .{e});
+            std.log.err("Websocket client write failed: {}", .{e});
             continue;
         };
         while (true) {
-            len = posix.read(client_fd, &buf) catch |e| {
-                std.log.err("Client read failed: {}", .{e});
+            message(&buf,
+                \\{"type":"ping"}
+            ) catch break;
+            if (posix.read(client, &buf) catch |e| {
+                std.log.err("Websocket ping failed: {}", .{e});
                 break;
-            };
-            const json = decode(&buf, allocator) catch break;
-            defer json.deinit();
-            std.debug.print("data: {s}\n", .{json.value.data});
-            try message(&buf, client_fd, "pong");
-            std.time.sleep(std.time.ns_per_ms * 500);
+            } < 9) break;
+            srv.accept() catch continue;
+            while (true) {
+                const len = srv.read(&msg) catch {
+                    srv.close();
+                    break;
+                };
+                if (len == 0) break;
+                message(&buf, msg[0..len]) catch break;
+            }
+            // try message(&buf, client_fd, "http://www.google.com");
+            // len = posix.read(client_fd, &buf) catch |e| {
+            //     std.log.err("Client read failed: {}", .{e});
+            //     break;
+            // };
+            // const json = decode(&buf, allocator) catch break;
+            // defer json.deinit();
+            // std.debug.print("data: {s}\n", .{json.value.data.?});
+            // try message(&buf, client_fd, "pong");
+            // std.time.sleep(std.time.ns_per_ms * 500);
         }
     }
 }
@@ -139,7 +165,7 @@ fn decode(buf: []u8, allocator: std.mem.Allocator) !std.json.Parsed(Msg) {
     };
 }
 
-fn message(buf: []u8, fd: c_int, msg: []const u8) !void {
+fn message(buf: []u8, msg: []const u8) !void {
     if (msg.len < 126) {
         const slice = std.fmt.bufPrint(
             buf,
@@ -151,7 +177,7 @@ fn message(buf: []u8, fd: c_int, msg: []const u8) !void {
         };
         buf[0] = 0x81;
         buf[1] = @intCast(msg.len);
-        _ = posix.write(fd, slice) catch |e| {
+        _ = posix.write(client, slice) catch |e| {
             std.log.err("Server write failed: {}", .{e});
             return e;
         };
@@ -169,8 +195,33 @@ fn message(buf: []u8, fd: c_int, msg: []const u8) !void {
     buf[1] = 0x7E;
     buf[2] = @intCast((msg.len >> 8) & 0xFF);
     buf[3] = @intCast(msg.len & 0xFF);
-    _ = posix.write(fd, slice) catch |e| {
+    _ = posix.write(client, slice) catch |e| {
         std.log.err("Server write failed: {}", .{e});
         return e;
     };
+}
+
+fn quit(_: c_int) callconv(.C) void {
+    if (0 < client) {
+        _ = posix.write(client, &[2]u8{ 0x88, 0x00 }) catch |e|
+            std.log.err("CLeanup failed: {}", .{e});
+    }
+    srv.unlink();
+    std.posix.exit(0);
+}
+
+fn exit(signal: c_int) callconv(.C) void {
+    switch (signal) {
+        posix.SIG.ILL => std.log.err("Illegal instruction", .{}),
+        posix.SIG.ABRT => std.log.err("Error program aborted", .{}),
+        posix.SIG.SEGV => std.log.err("Segmentation fault", .{}),
+        else => {},
+    }
+    if (0 < client) {
+        _ = posix.write(client, &[2]u8{ 0x88, 0x00 }) catch |e| {
+            std.log.err("CLeanup failed: {}", .{e});
+        };
+    }
+    srv.unlink();
+    std.posix.exit(1);
 }
