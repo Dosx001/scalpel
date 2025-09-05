@@ -29,14 +29,13 @@ function init() {
             incognito: data.payload.private ?? false,
           })
           .then((window) => {
-            setTimeout(() => {
-              ws.send(
-                JSON.stringify({
-                  id: window.id,
-                  tabId: (window.tabs ?? [])[0].id,
-                }),
-              );
-            }, 200);
+            const tab = (window.tabs ?? [])[0];
+            if (tab)
+              browser.tabs.onUpdated.addListener(handleUpdate, {
+                tabId: tab.id,
+                windowId: window.id,
+                properties: ["status"],
+              });
           });
         break;
     }
@@ -44,6 +43,22 @@ function init() {
 }
 
 init();
+
+function handleUpdate(
+  tabId: number,
+  info: browser.tabs._OnUpdatedChangeInfo,
+  tab: browser.tabs.Tab,
+) {
+  if (info.status === "complete") {
+    ws.send(
+      JSON.stringify({
+        id: tab.windowId,
+        tabId: tabId,
+      }),
+    );
+    browser.tabs.onUpdated.removeListener(handleUpdate);
+  }
+}
 
 browser.runtime.onSuspend.addListener(() => {
   ws.close();
