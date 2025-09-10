@@ -1,18 +1,14 @@
-type Message =
+type Payload =
   | {
       type: "ping";
     }
   | {
       type: "click" | "text";
-      payload: {
-        id: number;
-        query: string;
-      };
+      id: number;
+      query: string;
     }
   | {
       type: "window";
-      payload: {
-        url: string;
-        private?: boolean;
-      };
+      url: string;
+      private?: boolean;
     };

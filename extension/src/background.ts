@@ -6,15 +6,15 @@ function init() {
     setTimeout(init, 1000);
   };
   ws.onmessage = (ev) => {
-    const data = JSON.parse(ev.data) as Message;
+    const data = JSON.parse(ev.data) as Payload;
     switch (data.type) {
       case "ping":
         ws.send("pong");
         break;
       case "click":
         browser.scripting.executeScript({
-          target: { tabId: data.payload.id },
-          args: [data.payload.query],
+          target: { tabId: data.id },
+          args: [data.query],
           func: (query: string) => {
             const el = document.querySelector<HTMLElement>(query);
             if (el) {
@@ -29,8 +29,8 @@ function init() {
         break;
       case "text":
         browser.scripting.executeScript({
-          target: { tabId: data.payload.id },
-          args: [data.payload.query],
+          target: { tabId: data.id },
+          args: [data.query],
           func: (query: string) => {
             const el = document.querySelector<HTMLElement>(query);
             if (el)
@@ -44,9 +44,9 @@ function init() {
       case "window":
         browser.windows
           .create({
-            url: data.payload.url,
+            url: data.url,
             focused: true,
-            incognito: data.payload.private ?? false,
+            incognito: data.private ?? false,
           })
           .then((window) => {
             const tab = (window.tabs ?? [])[0];

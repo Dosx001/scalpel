@@ -45,7 +45,7 @@ pub fn main() void {
     }
     _ = posix.send(fd, std.fmt.bufPrint(
         &buf,
-        \\{{"type":"window","payload":{{"url":"https://www.google.com/search?q=websocket","private":true}}}}
+        \\{{"type":"window","url":"https://www.google.com/search?q=websocket","private":true}}
     ,
         .{},
     ) catch unreachable, 0) catch |e| {
@@ -68,7 +68,7 @@ pub fn main() void {
     };
     _ = posix.send(fd, std.fmt.bufPrint(
         &buf,
-        \\{{"type":"text","payload":{{"id":{d},"query":"h3"}}}}
+        \\{{"type":"text","id":{d},"query":"h3"}}
     ,
         .{json.value.tabId},
     ) catch unreachable, 0) catch |e| {
@@ -82,7 +82,7 @@ pub fn main() void {
     std.debug.print("{s}\n", .{buf[0..len]});
     _ = posix.send(fd, std.fmt.bufPrint(
         &buf,
-        \\{{"type":"click","payload":{{"id":{d},"query":"h3"}}}}
+        \\{{"type":"click","id":{d},"query":"h3"}}
     ,
         .{json.value.tabId},
     ) catch unreachable, 0) catch |e| {
