@@ -1,18 +1,20 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "permissions": [
-    "<all_urls>",
+    "alarms",
     "activeTab",
     "scripting",
     "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
   ],
   "browser_specific_settings": {
     "gecko": {
       "id": "@scalpel"
     }
   },
-  "browser_action": {
-    "browser_style": true,
+  "action": {
     "default_popup": "src/popup.html",
     "default_title": "Scalpel"
   },
@@ -20,5 +22,8 @@
     "scripts": [
       "src/background.ts"
     ]
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
   }
 }

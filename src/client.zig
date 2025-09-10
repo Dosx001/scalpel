@@ -80,4 +80,18 @@ pub fn main() void {
         return;
     };
     std.debug.print("{s}\n", .{buf[0..len]});
+    _ = posix.send(fd, std.fmt.bufPrint(
+        &buf,
+        \\{{"type":"click","payload":{{"id":{d},"query":"h3"}}}}
+    ,
+        .{json.value.tabId},
+    ) catch unreachable, 0) catch |e| {
+        std.log.err("send click failed: {}", .{e});
+        return;
+    };
+    len = posix.read(fd, &buf) catch |e| {
+        std.log.err("read click failed: {}", .{e});
+        return;
+    };
+    std.debug.print("{s}\n", .{buf[0..len]});
 }
