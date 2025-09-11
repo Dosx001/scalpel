@@ -172,13 +172,13 @@ fn decode(buf: []u8) !void {
     var index: usize =
         switch (len) {
             126 => blk: {
-                len = (@as(u16, buf[2]) << 8) | buf[3];
+                len = @as(u16, buf[2]) << 8 | buf[3];
                 break :blk 4;
             },
             127 => blk: {
                 len = 0;
-                for (2..10) |i| {
-                    len = (len << 8) | buf[i];
+                inline for (2..10) |i| {
+                    len = len << 8 | buf[i];
                 }
                 break :blk 10;
             },
