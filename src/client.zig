@@ -11,8 +11,11 @@ const Payload = struct {
     payload: []const u8,
 };
 
+var fd: posix.socket_t = undefined;
+var buf: [1024]u8 = undefined;
+
 pub fn main() void {
-    const fd = posix.socket(
+    fd = posix.socket(
         posix.AF.INET,
         posix.SOCK.STREAM,
         0,
@@ -30,68 +33,49 @@ pub fn main() void {
         std.log.err("connect failed: {}", .{e});
         return;
     };
-    var buf: [1024]u8 = undefined;
-    _ = posix.send(fd, "client", 0) catch |e| {
-        std.log.err("send failed: {}", .{e});
-        return;
-    };
-    var len = posix.read(fd, &buf) catch |e| {
-        std.log.err("read failed: {}", .{e});
-        return;
-    };
+    _ = message("client", .{}) catch unreachable;
     if (buf[0] == 0x0) {
         std.log.info("rejected", .{});
         return;
     }
-    _ = posix.send(fd, std.fmt.bufPrint(
-        &buf,
+    const json = message_json(
         \\{{"type":"window","url":"https://www.google.com/search?q=websocket","private":true}}
-    ,
-        .{},
-    ) catch unreachable, 0) catch |e| {
-        std.log.err("send window failed: {}", .{e});
-        return;
-    };
-    len = posix.read(fd, &buf) catch |e| {
-        std.log.err("read window failed: {}", .{e});
-        return;
-    };
-    std.debug.print("{s}\n", .{buf[0..len]});
-    const json = std.json.parseFromSlice(
-        Msg,
+    , .{}, Msg) catch unreachable;
+    _ = message(
+        \\{{"type":"text","id":{d},"query":"h1"}}
+    , .{json.value.tabId}) catch unreachable;
+    _ = message(
+        \\{{"type":"click","id":{d},"query":"h3"}}
+    , .{json.value.tabId}) catch unreachable;
+}
+
+fn message_json(
+    comptime fmt: []const u8,
+    args: anytype,
+    comptime T: type,
+) !std.json.Parsed(T) {
+    const len = try message(fmt, args);
+    return try std.json.parseFromSlice(
+        T,
         std.heap.page_allocator,
         buf[0..len],
         .{},
-    ) catch |e| {
-        std.log.err("parse window failed: {}", .{e});
-        return;
+    );
+}
+
+fn message(
+    comptime fmt: []const u8,
+    args: anytype,
+) !usize {
+    _ = posix.send(
+        fd,
+        try std.fmt.bufPrint(&buf, fmt, args),
+        0,
+    ) catch |err| {
+        std.log.err("send failed: {}", .{err});
+        return err;
     };
-    _ = posix.send(fd, std.fmt.bufPrint(
-        &buf,
-        \\{{"type":"text","id":{d},"query":"h3"}}
-    ,
-        .{json.value.tabId},
-    ) catch unreachable, 0) catch |e| {
-        std.log.err("send text failed: {}", .{e});
-        return;
-    };
-    len = posix.read(fd, &buf) catch |e| {
-        std.log.err("read text failed: {}", .{e});
-        return;
-    };
+    const len = try posix.read(fd, &buf);
     std.debug.print("{s}\n", .{buf[0..len]});
-    _ = posix.send(fd, std.fmt.bufPrint(
-        &buf,
-        \\{{"type":"click","id":{d},"query":"h3"}}
-    ,
-        .{json.value.tabId},
-    ) catch unreachable, 0) catch |e| {
-        std.log.err("send click failed: {}", .{e});
-        return;
-    };
-    len = posix.read(fd, &buf) catch |e| {
-        std.log.err("read click failed: {}", .{e});
-        return;
-    };
-    std.debug.print("{s}\n", .{buf[0..len]});
+    return len;
 }
