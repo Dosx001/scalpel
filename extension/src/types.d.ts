@@ -8,6 +8,11 @@ type Payload =
       query: string;
     }
   | {
+      type: "url";
+      id: number;
+      url: string;
+    }
+  | {
       type: "window";
       url: string;
       private?: boolean;

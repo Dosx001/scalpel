@@ -41,6 +41,16 @@ function init() {
           },
         });
         break;
+      case "url":
+        browser.tabs.update(data.id, { url: data.url }).then(() => {
+          ws.send(
+            JSON.stringify({
+              type: "url",
+              payload: "updated",
+            }),
+          );
+        });
+        break;
       case "window":
         browser.windows
           .create({
