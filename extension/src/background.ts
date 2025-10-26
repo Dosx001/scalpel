@@ -12,33 +12,13 @@ function init() {
         ws.send("pong");
         break;
       case "click":
-        browser.scripting.executeScript({
-          target: { tabId: data.id },
-          args: [data.query],
-          func: (query: string) => {
-            const el = document.querySelector<HTMLElement>(query);
-            if (el) {
-              el.click();
-              browser.runtime.sendMessage({
-                type: "click",
-                payload: "clicked",
-              });
-            }
-          },
+        browser.tabs.executeScript({
+          code: `document.querySelector("${data.query}")?.click()`,
         });
         break;
       case "text":
-        browser.scripting.executeScript({
-          target: { tabId: data.id },
-          args: [data.query],
-          func: (query: string) => {
-            const el = document.querySelector<HTMLElement>(query);
-            if (el)
-              browser.runtime.sendMessage({
-                type: "text",
-                payload: el.innerText,
-              });
-          },
+        browser.tabs.executeScript({
+          code: `{const e=document.querySelector("${data.query}");if(e)browser.runtime.sendMessage({type:"text",payload:e.innerText})}`,
         });
         break;
       case "url":
@@ -97,10 +77,3 @@ browser.runtime.onSuspend.addListener(() => {
 browser.runtime.onMessage.addListener((message) => {
   ws.send(JSON.stringify(message));
 });
-
-function keepAlive() {
-  browser.alarms.create({ when: Date.now() + 29_500 });
-}
-browser.alarms.onAlarm.addListener(keepAlive);
-browser.runtime.onStartup.addListener(keepAlive);
-browser.runtime.onInstalled.addListener(keepAlive);

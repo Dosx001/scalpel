@@ -45,7 +45,7 @@ pub fn main() void {
         \\{{"type":"text","id":{d},"query":"h1"}}
     , .{json.value.tabId}) catch unreachable;
     _ = message(
-        \\{{"type":"click","id":{d},"query":"h3"}}
+        \\{{"type":"text","id":{d},"query":"h3"}}
     , .{json.value.tabId}) catch unreachable;
     _ = message(
         \\{{"type":"url","url":"https://www.google.com/search?q=zig"}}
