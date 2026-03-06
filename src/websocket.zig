@@ -233,7 +233,7 @@ fn message(buf: []u8, msg: []const u8) !void {
     };
 }
 
-fn quit(_: c_int) callconv(.C) void {
+fn quit(_: c_int) callconv(.c) void {
     if (0 < browser) {
         _ = posix.write(browser, &[2]u8{ 0x88, 0x00 }) catch |e|
             std.log.err("CLeanup failed: {}", .{e});
@@ -241,7 +241,7 @@ fn quit(_: c_int) callconv(.C) void {
     std.posix.exit(0);
 }
 
-fn exit(signal: c_int) callconv(.C) void {
+fn exit(signal: c_int) callconv(.c) void {
     switch (signal) {
         posix.SIG.ILL => std.log.err("Illegal instruction", .{}),
         posix.SIG.ABRT => std.log.err("Error program aborted", .{}),
