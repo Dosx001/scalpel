@@ -18,7 +18,7 @@ function init() {
         break;
       case "text":
         browser.tabs.executeScript({
-          code: `{const e=document.querySelector("${data.query}");if(e)browser.runtime.sendMessage({type:"text",payload:e.innerText})}`,
+          code: `{const e=document.querySelector("${data.query}");browser.runtime.sendMessage({type:"text",payload:e?e.innerText:""})}`,
         });
         break;
       case "url":
