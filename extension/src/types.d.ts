@@ -8,6 +8,11 @@ type Payload =
       query: string;
     }
   | {
+      type: "execute";
+      code: string;
+      frame?: boolean;
+    }
+  | {
       type: "url";
       id: number;
       url: string;

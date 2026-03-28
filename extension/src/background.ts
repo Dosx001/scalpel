@@ -6,7 +6,7 @@ function init() {
     setTimeout(init, 1000);
   };
   ws.onmessage = (ev) => {
-    const data = JSON.parse(ev.data) as Payload;
+    const data: Payload = JSON.parse(ev.data);
     switch (data.type) {
       case "ping":
         ws.send("pong");
@@ -15,6 +15,29 @@ function init() {
         browser.tabs.executeScript({
           code: `document.querySelector("${data.query}")?.click()`,
         });
+        break;
+      case "execute":
+        browser.tabs
+          .executeScript({
+            code: data.code,
+            allFrames: data.frame ?? false,
+          })
+          .then(() => {
+            ws.send(
+              JSON.stringify({
+                type: "execute",
+                payload: "done",
+              }),
+            );
+          })
+          .catch((err: Error) => {
+            ws.send(
+              JSON.stringify({
+                type: "error",
+                payload: err.message,
+              }),
+            );
+          });
         break;
       case "text":
         browser.tabs.executeScript({
